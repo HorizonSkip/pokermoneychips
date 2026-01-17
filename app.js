@@ -287,7 +287,14 @@ async function createTable() {
     // Generate shareable URL
     const shareUrl = `${window.location.origin}${window.location.pathname}?table=${currentTableId}`;
     
-    // Show table view
+    // Store host player ID in localStorage
+    localStorage.setItem(`table_${currentTableId}_playerId`, hostPlayer.id);
+    localStorage.setItem(`table_${currentTableId}_isHost`, 'true');
+    
+    // Open table in new tab
+    window.open(shareUrl, '_blank');
+    
+    // Show table view in current tab
     showTableView();
     setupTableListener();
     
@@ -312,7 +319,7 @@ function handleJoinTable() {
     }
 }
 
-function joinTable(tableId) {
+async function joinTable(tableId) {
     if (!db) {
         alert('Firebase not initialized. Please check your configuration.');
         console.error('Firebase database not available');
@@ -320,9 +327,44 @@ function joinTable(tableId) {
     }
     
     currentTableId = tableId;
+    
+    // Check if user is already a player or host
+    const storedPlayerId = localStorage.getItem(`table_${tableId}_playerId`);
+    const storedIsHost = localStorage.getItem(`table_${tableId}_isHost`) === 'true';
+    
+    if (storedIsHost) {
+        isHost = true;
+        showTableView();
+        setupTableListener();
+        return;
+    }
+    
+    // Check if table exists and if user is already a player
+    const tableRef = ref(db, `tables/${tableId}`);
+    const snapshot = await get(tableRef);
+    const tableData = snapshot.val();
+    
+    if (!tableData) {
+        alert('Table not found');
+        window.location.href = window.location.origin + window.location.pathname;
+        return;
+    }
+    
+    // Check if stored player ID exists in table
+    if (storedPlayerId && tableData.players) {
+        const existingPlayer = tableData.players.find(p => p.id === storedPlayerId);
+        if (existingPlayer) {
+            // User is already a player
+            isHost = false;
+            showTableView();
+            setupTableListener();
+            return;
+        }
+    }
+    
+    // User needs to join - show join form
     isHost = false;
     showJoinForm();
-    setupTableListener();
 }
 
 function showJoinForm() {
@@ -398,8 +440,12 @@ function showJoinForm() {
             players: updatedPlayers
         });
         
-        // Now show table view
+        // Store player ID in localStorage
+        localStorage.setItem(`table_${currentTableId}_playerId`, newPlayer.id);
+        
+        // Now show table view and setup listener
         showTableView();
+        setupTableListener();
     });
 }
 
@@ -657,7 +703,7 @@ function renderControls() {
             `;
         }
     } else {
-        // Show betting controls for current player (skip all-in players)
+        // Show betting controls for current player (skip all-in players and folded players)
         if (currentPlayer && currentPlayer.active && currentPlayer.chips > 0 && !currentPlayer.isAllIn) {
             // Calculate highest bet in current round
             const highestBet = Math.max(...players.filter(p => p.active).map(p => p.lastBet || 0));
@@ -756,17 +802,18 @@ function setupBettingControls(player, toCall, maxRaise, minRaise) {
 }
 
 function allBetsEqual() {
-    const activePlayers = tableState.players.filter(p => p.active && p.chips > 0);
-    if (activePlayers.length === 0) return false;
+    // Get all players who are still in the hand (active and not folded)
+    const playersInHand = tableState.players.filter(p => p.active);
+    if (playersInHand.length === 0) return false;
     
-    const activeBets = activePlayers.map(p => p.lastBet || 0);
-    if (activeBets.length === 0) return true;
+    // Get bets from all players in hand (including all-in players)
+    const allBets = playersInHand.map(p => p.lastBet || 0);
+    if (allBets.length === 0) return true;
     
-    // All bets must be equal, or all players have acted
-    const maxBet = Math.max(...activeBets);
-    const allEqual = activeBets.every(bet => bet === maxBet);
+    // All bets must be equal
+    const maxBet = Math.max(...allBets);
+    const allEqual = allBets.every(bet => bet === maxBet);
     
-    // Also check if we've gone around the table
     return allEqual;
 }
 
@@ -794,6 +841,7 @@ async function performAction(action, amount) {
         // If player went all-in, mark them as all-in (still active in hand)
         if (currentPlayer.chips === 0 && tableState.handActive) {
             currentPlayer.isAllIn = true;
+            currentPlayer.actedThisRound = true; // All-in players can't act anymore
         }
     }
     
@@ -809,8 +857,8 @@ async function performAction(action, amount) {
         currentPlayer.actedThisRound = true;
     }
     
-    // Move to next active player with chips or all-in players
-    const activePlayers = players.filter(p => p.active && (p.chips > 0 || p.isAllIn));
+    // Move to next active player with chips (skip all-in players - they're done acting)
+    const activePlayers = players.filter(p => p.active && p.chips > 0 && !p.isAllIn);
     
     // Check if only one player remains (all others folded)
     if (activePlayers.length === 1 && tableState.pot > 0) {
@@ -847,35 +895,70 @@ async function performAction(action, amount) {
         return;
     }
     
+    // Check if there are any active players who can still act (not all-in)
     if (activePlayers.length === 0) {
-        // All players are all-in or folded, advance round
-        advanceRound();
+        // All players are all-in or folded - check if we can advance round
+        const allInPlayers = players.filter(p => p.active && p.isAllIn);
+        const foldedPlayers = players.filter(p => !p.active);
+        
+        // If all remaining players are all-in, advance round
+        if (allInPlayers.length > 0 && allInPlayers.length + foldedPlayers.length === players.filter(p => p.chips > 0 || p.isAllIn).length) {
+            advanceRound();
+            await update(tableRef, {
+                players,
+                pot: tableState.pot,
+                lastAction: tableState.lastAction,
+                currentRound: tableState.currentRound,
+                bettingRound: tableState.bettingRound,
+                handActive: tableState.handActive
+            });
+            return;
+        }
+        
+        // Otherwise, hand is complete (all folded except one)
+        tableState.handActive = false;
         await update(tableRef, {
             players,
             pot: tableState.pot,
-            lastAction: tableState.lastAction,
-            currentRound: tableState.currentRound,
-            bettingRound: tableState.bettingRound,
             handActive: tableState.handActive
         });
         return;
     }
     
-    const currentIndex = activePlayers.findIndex(p => p.id === currentPlayer.id);
-    const nextIndex = (currentIndex + 1) % activePlayers.length;
-    const nextPlayer = activePlayers[nextIndex];
-    tableState.currentPlayerIndex = players.findIndex(p => p.id === nextPlayer.id);
-    
-    // Check if betting round is complete (all bets equal and all players have acted)
-    const allActed = activePlayers.every(p => p.actedThisRound);
-    const betsEqual = allBetsEqual();
-    
-    if (betsEqual && allActed) {
-        // Reset acted flags for next round
-        players.forEach(p => p.actedThisRound = false);
-        advanceRound();
+    // Find next player who can act (not all-in)
+    if (activePlayers.length > 0) {
+        const currentIndex = activePlayers.findIndex(p => p.id === currentPlayer.id);
+        let nextIndex;
+        
+        if (currentIndex >= 0) {
+            // Current player is in active list, move to next
+            nextIndex = (currentIndex + 1) % activePlayers.length;
+        } else {
+            // Current player went all-in or folded, start from first active player
+            nextIndex = 0;
+        }
+        
+        const nextPlayer = activePlayers[nextIndex];
+        tableState.currentPlayerIndex = players.findIndex(p => p.id === nextPlayer.id);
+        
+        // Check if betting round is complete (all active players have acted and bets are equal)
+        const allActed = activePlayers.every(p => p.actedThisRound);
+        const betsEqual = allBetsEqual();
+        
+        if (betsEqual && allActed) {
+            // Reset acted flags for next round (but keep all-in status)
+            players.forEach(p => {
+                if (!p.isAllIn) {
+                    p.actedThisRound = false;
+                }
+            });
+            advanceRound();
+        } else {
+            tableState.bettingRound++;
+        }
     } else {
-        tableState.bettingRound++;
+        // No active players left (all all-in or folded) - advance round
+        advanceRound();
     }
     
     await update(tableRef, {
