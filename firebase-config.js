@@ -1,7 +1,7 @@
 // Firebase Realtime Database configuration
 // Replace with your Firebase project credentials
 const firebaseConfig = {
-  apiKey: "AIzaSyCAI0xwSlQ8UnfDA3Ytz4XcwaeEwGMU2Ao",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: "pokermoneychips.firebaseapp.com",
   databaseURL: "https://pokermoneychips-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "pokermoneychips",
@@ -13,5 +13,6 @@ const firebaseConfig = {
 
 // Initialize Firebase (will be initialized in app.js)
 export { firebaseConfig };
+
 
 
