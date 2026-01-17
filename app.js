@@ -149,7 +149,7 @@ function updatePlayersSetup(numPlayers) {
     container.innerHTML = '';
     
     // More distinct colors for better visibility
-    const colors = ['#FF4444', '#00C853', '#2196F3', '#FF9800', '#9C27B0', '#E91E63', '#00BCD4', '#4CAF50', '#FFC107', '#F44336'];
+    const colors = ['#f70000', '#ff9a9a', '#00b300', '#49ff94', '#0a1347', '#22e6ff', '#ffff07', '#ff5800', '#E91E63', '#9C27B0'];
     
     for (let i = 0; i < numPlayers; i++) {
         const playerCard = document.createElement('div');
@@ -238,7 +238,7 @@ async function createTable() {
     const bigBlind = smallBlind * 2;
     
     // More distinct colors for better visibility
-    const colors = ['#FF4444', '#00C853', '#2196F3', '#FF9800', '#9C27B0', '#E91E63', '#00BCD4', '#4CAF50', '#FFC107', '#F44336'];
+    const colors = ['#f70000', '#ff9a9a', '#00b300', '#49ff94', '#0a1347', '#22e6ff', '#ffff07', '#ff5800', '#E91E63', '#9C27B0'];
     
     // Create host player
     const hostPlayer = {
@@ -407,7 +407,7 @@ function showJoinForm() {
         }
         
         // More distinct colors
-        const colors = ['#FF4444', '#00C853', '#2196F3', '#FF9800', '#9C27B0', '#E91E63', '#00BCD4', '#4CAF50', '#FFC107', '#F44336'];
+        const colors = ['#f70000', '#ff9a9a', '#00b300', '#49ff94', '#0a1347', '#22e6ff', '#ffff07', '#ff5800', '#E91E63', '#9C27B0'];
         const usedColors = tableData.players.map(p => p.color);
         let playerColor = colors.find(c => !usedColors.includes(c));
         if (!playerColor) {
@@ -1405,3 +1405,4 @@ setInterval(async () => {
     // This would ideally run on a server, but for client-side we can check on table access
     // Firebase Security Rules should handle expiration
 }, 60 * 60 * 1000); // Check every hour
+
