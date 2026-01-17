@@ -17,8 +17,8 @@
 1. In Firebase Console, go to Project Settings (gear icon)
 2. Scroll down to "Your apps" section
 3. Click the web icon (`</>`) to add a web app
-4. Register your app (you can name it "Poker Chip Tracker")
-5. Copy the Firebase configuration object
+4. Register your app
+5. Copy the Firebase configuration
 
 ### 3. Update firebase-config.js
 
@@ -119,3 +119,4 @@ The free Spark plan includes:
 - 100 concurrent connections
 
 This should be sufficient for casual use. For heavy usage, consider the Blaze (pay-as-you-go) plan.
+
