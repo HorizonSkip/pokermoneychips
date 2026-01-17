@@ -221,50 +221,59 @@ async function createTable() {
         return;
     }
     
-    const numPlayers = parseInt(document.getElementById('num-players').value);
+    const hostNameInput = document.getElementById('host-name');
+    if (!hostNameInput) {
+        alert('Host name input not found');
+        return;
+    }
+    
+    const hostName = hostNameInput.value.trim().substring(0, 8);
+    if (!hostName) {
+        alert('Please enter your name');
+        return;
+    }
+    
     const buyIn = parseInt(document.getElementById('buy-in').value);
     const smallBlind = parseInt(document.getElementById('small-blind').value);
     const bigBlind = smallBlind * 2;
     
-    const players = [];
-    const playerCards = document.querySelectorAll('.player-card');
+    // More distinct colors for better visibility
+    const colors = ['#FF4444', '#00C853', '#2196F3', '#FF9800', '#9C27B0', '#E91E63', '#00BCD4', '#4CAF50', '#FFC107', '#F44336'];
     
-    playerCards.forEach((card, index) => {
-        const nameInput = card.querySelector('.player-name-input');
-        const colorInput = card.querySelector('.color-picker');
-        const playerName = (nameInput.value || `Player ${index + 1}`).substring(0, 8);
-        players.push({
-            id: `player_${Date.now()}_${index}`,
-            name: playerName,
-            color: colorInput.value,
-            chips: buyIn,
-            position: index,
-            totalBuyIn: buyIn,
-            buyInCount: 1,
-            active: true,
-            isDealer: false,
-            isSmallBlind: false,
-            isBigBlind: false,
-            lastBet: 0,
-            actedThisRound: false,
-            isAllIn: false
-        });
-    });
+    // Create host player
+    const hostPlayer = {
+        id: `host_${Date.now()}`,
+        name: hostName,
+        color: colors[0],
+        chips: buyIn,
+        position: 0,
+        totalBuyIn: buyIn,
+        buyInCount: 1,
+        active: true,
+        isDealer: false,
+        isSmallBlind: false,
+        isBigBlind: false,
+        lastBet: 0,
+        actedThisRound: false,
+        isAllIn: false,
+        isHost: true
+    };
     
     const tableData = {
         createdAt: Date.now(),
         expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours
-        numPlayers,
         buyIn,
         smallBlind,
         bigBlind,
-        players,
+        players: [hostPlayer],
         currentRound: 'pre-flop',
         pot: 0,
         currentPlayerIndex: -1,
         dealerIndex: -1,
         bettingRound: 0,
         handActive: false,
+        gameStarted: false,
+        roundNumber: 0,
         lastAction: null
     };
     
