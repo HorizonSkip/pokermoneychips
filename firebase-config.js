@@ -1,14 +1,15 @@
 // Firebase Realtime Database configuration
 // Replace with your Firebase project credentials
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-    appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyCtSVjFVDcZE0HmhOwGVHR9o_wrKK4gJjw",
+  authDomain: "pokermoneychips.firebaseapp.com",
+  databaseURL: "https://pokermoneychips-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "pokermoneychips",
+  storageBucket: "pokermoneychips.firebasestorage.app",
+  messagingSenderId: "862323452351",
+  appId: "1:862323452351:web:eaf13efe653e294b0dd90a",
+  measurementId: "G-MMC65XP676"
 };
-
 // Initialize Firebase (will be initialized in app.js)
 export { firebaseConfig };
+
