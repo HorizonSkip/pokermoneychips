@@ -1,6 +1,6 @@
-# Poker Chip Tracker
+# Poker Money Chips
 
-A multiplayer web application for tracking poker chips in live Texas Hold'em games with real-time synchronization across all players.
+A multiplayer web application for tracking poker chips with real-time synchronization across all players.
 
 ## Features
 
@@ -68,21 +68,19 @@ netlify deploy --prod
 ## Usage
 
 1. **Create a Table**: Click "Create New Table" and configure:
-   - Number of players (2-10)
-   - Buy-in amount ($10-$1000)
+   - Host Name
+   - Buy-in amount (₹10-₹1000)
    - Small blind (automatically sets big blind to 2×)
-   - Player names and colors
-   - Drag and drop to arrange player positions
 
 2. **Share the Link**: Copy the generated table URL and share it with other players
 
 3. **Start Playing**:
-   - Select the dealer
+   - Host selects the dealer
    - Blinds are automatically posted
    - Players take turns betting
    - Rounds advance automatically (Pre-Flop → Flop → Turn → River)
    - Select winner(s) and distribute the pot
-   - Start the next hand (dealer button moves automatically)
+   - Start the next hand (dealer chip moves automatically)
 
 ## Technical Details
 
@@ -111,3 +109,4 @@ Works in all modern browsers that support:
 ## License
 
 MIT License - feel free to use and modify as needed.
+
