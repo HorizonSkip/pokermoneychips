@@ -1,11 +1,19 @@
 import { firebaseConfig } from './firebase-config.js';
 
 // Initialize Firebase
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { initializeApp as firebaseInit } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
 import { getDatabase, ref, set, onValue, push, update, remove } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+let app, db;
+
+try {
+    app = firebaseInit(firebaseConfig);
+    db = getDatabase(app);
+    console.log('Firebase initialized successfully');
+} catch (error) {
+    console.error('Firebase initialization error:', error);
+    alert('Failed to initialize Firebase. Please check your configuration.');
+}
 
 // State management
 let currentTableId = null;
@@ -15,10 +23,34 @@ let isHost = false;
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
-    initializeApp();
+    // Attach event listeners to initial buttons immediately
+    const createBtn = document.getElementById('create-table-btn');
+    const joinBtn = document.getElementById('join-table-btn');
+    
+    if (createBtn) {
+        createBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            console.log('Create table button clicked');
+            showCreateForm();
+        });
+    }
+    if (joinBtn) {
+        joinBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            console.log('Join table button clicked');
+            handleJoinTable();
+        });
+    }
+    
+    try {
+        initApp();
+    } catch (error) {
+        console.error('Error initializing app:', error);
+        alert('Error initializing app. Please check the console for details.');
+    }
 });
 
-function initializeApp() {
+function initApp() {
     // Check if we're joining an existing table
     const urlParams = new URLSearchParams(window.location.search);
     const tableId = urlParams.get('table');
@@ -28,10 +60,6 @@ function initializeApp() {
     } else {
         showWelcomeScreen();
     }
-    
-    // Set up event listeners
-    document.getElementById('create-table-btn')?.addEventListener('click', showCreateForm);
-    document.getElementById('join-table-btn')?.addEventListener('click', handleJoinTable);
 }
 
 function showWelcomeScreen() {
@@ -54,7 +82,12 @@ function showWelcomeScreen() {
 }
 
 function showCreateForm() {
+    console.log('showCreateForm called');
     const mainContent = document.getElementById('main-content');
+    if (!mainContent) {
+        console.error('Main content element not found');
+        return;
+    }
     mainContent.innerHTML = `
         <div class="create-form">
             <h2>Create New Table</h2>
@@ -211,6 +244,11 @@ function handleDragEnd(e) {
 }
 
 async function createTable() {
+    if (!db) {
+        alert('Firebase not initialized. Please check your configuration.');
+        return;
+    }
+    
     const numPlayers = parseInt(document.getElementById('num-players').value);
     const buyIn = parseInt(document.getElementById('buy-in').value);
     const smallBlind = parseInt(document.getElementById('small-blind').value);
@@ -275,7 +313,13 @@ async function createTable() {
 }
 
 function handleJoinTable() {
-    const tableId = document.getElementById('table-id-input').value.trim();
+    const tableIdInput = document.getElementById('table-id-input');
+    if (!tableIdInput) {
+        console.error('Table ID input not found');
+        return;
+    }
+    
+    const tableId = tableIdInput.value.trim();
     if (tableId) {
         joinTable(tableId);
     } else {
@@ -284,6 +328,12 @@ function handleJoinTable() {
 }
 
 function joinTable(tableId) {
+    if (!db) {
+        alert('Firebase not initialized. Please check your configuration.');
+        console.error('Firebase database not available');
+        return;
+    }
+    
     currentTableId = tableId;
     isHost = false;
     showTableView();
@@ -291,6 +341,11 @@ function joinTable(tableId) {
 }
 
 function setupTableListener() {
+    if (!db) {
+        console.error('Cannot setup table listener: Firebase not initialized');
+        return;
+    }
+    
     const tableRef = ref(db, `tables/${currentTableId}`);
     
     onValue(tableRef, (snapshot) => {
