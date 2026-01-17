@@ -501,6 +501,15 @@ function setupTableListener() {
         }
         
         tableState = data;
+        
+        // Get current player ID from localStorage
+        const storedPlayerId = localStorage.getItem(`table_${currentTableId}_playerId`);
+        currentPlayerId = storedPlayerId;
+        
+        // Check if user is host
+        const storedIsHost = localStorage.getItem(`table_${currentTableId}_isHost`) === 'true';
+        isHost = storedIsHost;
+        
         renderTable();
     });
 }
@@ -703,8 +712,12 @@ function renderControls() {
             `;
         }
     } else {
-        // Show betting controls for current player (skip all-in players and folded players)
-        if (currentPlayer && currentPlayer.active && currentPlayer.chips > 0 && !currentPlayer.isAllIn) {
+        // Check if this device belongs to the current player
+        const storedPlayerId = localStorage.getItem(`table_${currentTableId}_playerId`);
+        const isCurrentPlayer = currentPlayer && storedPlayerId === currentPlayer.id;
+        
+        // Show betting controls ONLY for the current player's device (skip all-in players and folded players)
+        if (isCurrentPlayer && currentPlayer.active && currentPlayer.chips > 0 && !currentPlayer.isAllIn) {
             // Calculate highest bet in current round
             const highestBet = Math.max(...players.filter(p => p.active).map(p => p.lastBet || 0));
             const toCall = Math.max(0, highestBet - (currentPlayer.lastBet || 0));
@@ -750,11 +763,29 @@ function renderControls() {
                 setupBettingControls(currentPlayer, toCall, maxRaise, minRaise);
             }
         } else {
-            controlPanel.innerHTML = `
-                <div style="text-align: center; color: var(--text-secondary);">
-                    Waiting for ${currentPlayer?.name || 'current player'}...
-                </div>
-            `;
+            // Show disabled/grayed out buttons for other players
+            const storedPlayerId = localStorage.getItem(`table_${currentTableId}_playerId`);
+            const isCurrentPlayer = currentPlayer && storedPlayerId === currentPlayer.id;
+            
+            if (isCurrentPlayer && currentPlayer.isAllIn) {
+                controlPanel.innerHTML = `
+                    <div style="text-align: center; color: var(--text-secondary);">
+                        You are all-in. Waiting for other players...
+                    </div>
+                `;
+            } else if (!isCurrentPlayer && currentPlayer) {
+                controlPanel.innerHTML = `
+                    <div style="text-align: center; color: var(--text-secondary);">
+                        Waiting for ${currentPlayer.name} to act...
+                    </div>
+                `;
+            } else {
+                controlPanel.innerHTML = `
+                    <div style="text-align: center; color: var(--text-secondary);">
+                        Waiting for current player...
+                    </div>
+                `;
+            }
         }
     }
     
@@ -860,10 +891,11 @@ async function performAction(action, amount) {
     // Move to next active player with chips (skip all-in players - they're done acting)
     const activePlayers = players.filter(p => p.active && p.chips > 0 && !p.isAllIn);
     
-    // Check if only one player remains (all others folded)
-    if (activePlayers.length === 1 && tableState.pot > 0) {
+    // Check if only one player remains (all others folded) - but exclude all-in players from this check
+    const nonAllInActivePlayers = players.filter(p => p.active && p.chips > 0 && !p.isAllIn);
+    if (nonAllInActivePlayers.length === 1 && tableState.pot > 0) {
         // Auto-award pot to the last remaining player
-        const winner = activePlayers[0];
+        const winner = nonAllInActivePlayers[0];
         const winnerIndex = players.findIndex(p => p.id === winner.id);
         players[winnerIndex].chips += tableState.pot;
         tableState.pot = 0;
@@ -900,9 +932,10 @@ async function performAction(action, amount) {
         // All players are all-in or folded - check if we can advance round
         const allInPlayers = players.filter(p => p.active && p.isAllIn);
         const foldedPlayers = players.filter(p => !p.active);
+        const totalInHand = players.filter(p => p.active || (p.isAllIn && p.chips === 0)).length;
         
         // If all remaining players are all-in, advance round
-        if (allInPlayers.length > 0 && allInPlayers.length + foldedPlayers.length === players.filter(p => p.chips > 0 || p.isAllIn).length) {
+        if (allInPlayers.length > 0 && allInPlayers.length + foldedPlayers.length === totalInHand && allInPlayers.length >= 2) {
             advanceRound();
             await update(tableRef, {
                 players,
@@ -911,6 +944,40 @@ async function performAction(action, amount) {
                 currentRound: tableState.currentRound,
                 bettingRound: tableState.bettingRound,
                 handActive: tableState.handActive
+            });
+            return;
+        }
+        
+        // If only one player remains (others folded), award pot
+        if (nonAllInActivePlayers.length === 1 && tableState.pot > 0) {
+            const winner = nonAllInActivePlayers[0];
+            const winnerIndex = players.findIndex(p => p.id === winner.id);
+            players[winnerIndex].chips += tableState.pot;
+            tableState.pot = 0;
+            tableState.handActive = false;
+            tableState.currentRound = 'pre-flop';
+            tableState.bettingRound = 0;
+            tableState.currentPlayerIndex = -1;
+            
+            players.forEach(p => {
+                p.lastBet = 0;
+                p.actedThisRound = false;
+                p.active = p.chips > 0;
+                p.isDealer = false;
+                p.isSmallBlind = false;
+                p.isBigBlind = false;
+                p.isAllIn = false;
+            });
+            
+            alert(`${winner.name} wins the pot! (All other players folded)`);
+            
+            await update(tableRef, {
+                players,
+                pot: tableState.pot,
+                handActive: tableState.handActive,
+                currentRound: tableState.currentRound,
+                bettingRound: tableState.bettingRound,
+                currentPlayerIndex: tableState.currentPlayerIndex
             });
             return;
         }
@@ -957,8 +1024,19 @@ async function performAction(action, amount) {
             tableState.bettingRound++;
         }
     } else {
-        // No active players left (all all-in or folded) - advance round
-        advanceRound();
+        // No active players left (all all-in or folded) - check if we can advance
+        const allInPlayers = players.filter(p => p.active && p.isAllIn);
+        const foldedPlayers = players.filter(p => !p.active);
+        const totalInHand = players.filter(p => p.active || (p.isAllIn && p.chips === 0)).length;
+        
+        // If all remaining players are all-in (at least 2), advance round
+        if (allInPlayers.length >= 2 && allInPlayers.length + foldedPlayers.length === totalInHand) {
+            advanceRound();
+        } else {
+            // Hand complete - all folded except one or only one all-in
+            tableState.handActive = false;
+            tableState.currentPlayerIndex = -1;
+        }
     }
     
     await update(tableRef, {
@@ -982,7 +1060,10 @@ function advanceRound() {
         // Reset last bets for new round (but keep track of total investment)
         tableState.players.forEach(p => {
             p.lastBet = 0;
-            p.actedThisRound = false;
+            // Reset acted flag, but all-in players stay all-in
+            if (!p.isAllIn) {
+                p.actedThisRound = false;
+            }
         });
         
         // Find first active player to act (excluding all-in players)
@@ -994,7 +1075,7 @@ function advanceRound() {
             tableState.handActive = false;
             tableState.currentPlayerIndex = -1;
             setTimeout(() => {
-                if (tableState.pot > 0) {
+                if (tableState.pot > 0 && isHost) {
                     showWinnerSelection();
                 }
             }, 500);
@@ -1004,9 +1085,9 @@ function advanceRound() {
         tableState.handActive = false;
         tableState.currentPlayerIndex = -1;
         
-        // Show winner selection after a short delay
+        // Show winner selection after a short delay (only to host)
         setTimeout(() => {
-            if (tableState.pot > 0) {
+            if (tableState.pot > 0 && isHost) {
                 showWinnerSelection();
             }
         }, 500);
@@ -1108,6 +1189,7 @@ async function startHand() {
         p.active = p.chips > 0;
         p.lastBet = 0;
         p.actedThisRound = false;
+        p.isAllIn = false; // Reset all-in status for new hand
     });
     
     // Post blinds
@@ -1118,7 +1200,10 @@ async function startHand() {
         smallBlindPlayer.chips -= blindAmount;
         smallBlindPlayer.lastBet = blindAmount;
         tableState.pot = blindAmount;
-        smallBlindPlayer.actedThisRound = true;
+        // In heads-up, small blind acts first, so don't mark as acted yet
+        if (playersWithChips.length > 2) {
+            smallBlindPlayer.actedThisRound = true;
+        }
     }
     
     if (bigBlindPlayer.chips >= tableState.bigBlind) {
@@ -1126,14 +1211,18 @@ async function startHand() {
         bigBlindPlayer.chips -= blindAmount;
         bigBlindPlayer.lastBet = blindAmount;
         tableState.pot += blindAmount;
-        bigBlindPlayer.actedThisRound = true;
+        // Big blind acts last in pre-flop (after UTG), so don't mark as acted yet
+        bigBlindPlayer.actedThisRound = false;
     }
     
-    // Start with player after big blind (or first player if only 2 players)
+    // Start with player after big blind (UTG)
+    // In heads-up (2 players), small blind (dealer) acts first, then big blind
     let firstToAct;
     if (playersWithChips.length === 2) {
-        firstToAct = dealerIndex; // In heads-up, dealer acts first
+        // Heads-up: Small blind (dealer) acts first
+        firstToAct = smallBlindIndex;
     } else {
+        // Regular: UTG (under the gun, after big blind) acts first
         firstToAct = (bigBlindIndex + 1) % tableState.players.length;
         // Skip players with no chips
         while (tableState.players[firstToAct].chips === 0) {
@@ -1158,6 +1247,11 @@ async function startHand() {
 }
 
 function showWinnerSelection() {
+    // Only host can select winners
+    if (!isHost) {
+        return;
+    }
+    
     if (!tableState || tableState.pot === 0) {
         return;
     }
