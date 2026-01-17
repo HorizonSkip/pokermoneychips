@@ -308,8 +308,10 @@ async function createTable() {
     showTableView();
     setupTableListener();
     
-    // Show share link
-    showShareLink(shareUrl);
+    // Show share link after a short delay to ensure DOM is ready
+    setTimeout(() => {
+        showShareLink(shareUrl);
+    }, 500);
 }
 
 function handleJoinTable() {
@@ -400,9 +402,16 @@ function renderTable() {
     if (!tableState) return;
     
     const mainContent = document.getElementById('main-content');
+    const currentPlayer = tableState.players[tableState.currentPlayerIndex];
+    const turnText = (tableState.handActive && currentPlayer && currentPlayer.active && currentPlayer.chips > 0) 
+        ? `Turn: ${currentPlayer.name}` 
+        : '';
+    const roundName = (tableState.currentRound || 'Pre-Flop').replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase());
+    
     mainContent.innerHTML = `
         <div class="table-container">
-            <div class="round-indicator" id="round-indicator">${tableState.currentRound || 'Pre-Flop'}</div>
+            <div class="round-indicator" id="round-indicator">${roundName}</div>
+            ${turnText ? `<div class="turn-indicator" id="turn-indicator">${turnText}</div>` : ''}
             <div class="poker-table" id="poker-table">
                 <div class="pot-display" id="pot-display">
                     <div class="pot-label">Pot</div>
@@ -428,11 +437,11 @@ function renderPlayers() {
     const existingPlayers = table.querySelectorAll('.player-seat');
     existingPlayers.forEach(p => p.remove());
     
-    // Calculate positions around oval table
+    // Calculate positions around oval table (outside the oval)
     players.forEach((player, index) => {
         const angle = (2 * Math.PI * index) / numPlayers - Math.PI / 2; // Start at top
-        const radiusX = 45; // Horizontal radius percentage
-        const radiusY = 35; // Vertical radius percentage
+        const radiusX = 55; // Horizontal radius percentage (increased to place outside)
+        const radiusY = 42; // Vertical radius percentage (increased to place outside)
         
         const x = 50 + radiusX * Math.cos(angle);
         const y = 50 + radiusY * Math.sin(angle);
@@ -607,14 +616,7 @@ function renderControls() {
         }
     }
     
-    // Add winner selection if at river
-    if (tableState.currentRound === 'river' && tableState.bettingRound >= 1) {
-        setTimeout(() => {
-            if (tableState.handActive && allBetsEqual()) {
-                showWinnerSelection();
-            }
-        }, 1000);
-    }
+    // Winner selection is now handled in advanceRound() when hand completes
 }
 
 function setupBettingControls(player, toCall, maxRaise, minRaise) {
@@ -714,6 +716,41 @@ async function performAction(action, amount) {
     // Move to next active player with chips
     const activePlayers = players.filter(p => p.active && p.chips > 0);
     
+    // Check if only one player remains (all others folded)
+    if (activePlayers.length === 1 && tableState.pot > 0) {
+        // Auto-award pot to the last remaining player
+        const winner = activePlayers[0];
+        const winnerIndex = players.findIndex(p => p.id === winner.id);
+        players[winnerIndex].chips += tableState.pot;
+        tableState.pot = 0;
+        tableState.handActive = false;
+        tableState.currentRound = 'pre-flop';
+        tableState.bettingRound = 0;
+        tableState.currentPlayerIndex = -1;
+        
+        // Reset player states
+        players.forEach(p => {
+            p.lastBet = 0;
+            p.actedThisRound = false;
+            p.active = p.chips > 0;
+            p.isDealer = false;
+            p.isSmallBlind = false;
+            p.isBigBlind = false;
+        });
+        
+        alert(`${winner.name} wins the pot! (All other players folded)`);
+        
+        await update(tableRef, {
+            players,
+            pot: tableState.pot,
+            handActive: tableState.handActive,
+            currentRound: tableState.currentRound,
+            bettingRound: tableState.bettingRound,
+            currentPlayerIndex: tableState.currentPlayerIndex
+        });
+        return;
+    }
+    
     if (activePlayers.length === 0) {
         // All players are all-in or folded, advance round
         advanceRound();
@@ -775,9 +812,16 @@ function advanceRound() {
             tableState.currentPlayerIndex = tableState.players.findIndex(p => p.id === activePlayers[0].id);
         }
     } else {
-        // Hand complete
+        // Hand complete - show winner selection
         tableState.handActive = false;
         tableState.currentPlayerIndex = -1;
+        
+        // Show winner selection after a short delay
+        setTimeout(() => {
+            if (tableState.pot > 0) {
+                showWinnerSelection();
+            }
+        }, 500);
     }
 }
 
@@ -902,21 +946,34 @@ async function startHand() {
 }
 
 function showWinnerSelection() {
+    if (!tableState || tableState.pot === 0) {
+        return;
+    }
+    
+    // Get eligible players (those who are still active or have chips)
+    const eligiblePlayers = tableState.players
+        .map((p, i) => ({ player: p, index: i }))
+        .filter(({ player }) => player.active || player.chips > 0);
+    
+    if (eligiblePlayers.length === 0) {
+        return;
+    }
+    
     const modal = document.createElement('div');
     modal.className = 'winner-modal';
     modal.innerHTML = `
         <div class="winner-modal-content">
-            <h3>Select Winner(s)</h3>
+            <h3>Select Winner(s) - Pot: $${tableState.pot}</h3>
             <div class="winner-options" id="winner-options">
-                ${tableState.players.filter(p => p.chips > 0 || p.active).map((p, i) => `
+                ${eligiblePlayers.map(({ player, index }) => `
                     <div class="winner-option">
-                        <input type="checkbox" id="winner-${i}" value="${i}">
-                        <label for="winner-${i}">${p.name} ($${p.chips})</label>
-                        <input type="number" class="pot-split-input" id="split-${i}" placeholder="Split amount" min="0" max="${tableState.pot}" value="${tableState.pot}">
+                        <input type="checkbox" id="winner-${index}" value="${index}">
+                        <label for="winner-${index}">${player.name} ($${player.chips})</label>
+                        <input type="number" class="pot-split-input" id="split-${index}" placeholder="Split amount" min="0" max="${tableState.pot}" value="${Math.floor(tableState.pot / eligiblePlayers.length)}">
                     </div>
                 `).join('')}
             </div>
-            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
                 <button id="cancel-winner-btn" class="btn btn-secondary">Cancel</button>
                 <button id="confirm-winner-btn" class="btn btn-primary">Distribute Pot</button>
             </div>
@@ -999,25 +1056,38 @@ async function distributePot(winners) {
 }
 
 function showShareLink(url) {
+    // Remove existing share section if any
+    const existingShare = document.querySelector('.share-section');
+    if (existingShare) {
+        existingShare.remove();
+    }
+    
     const shareSection = document.createElement('div');
     shareSection.className = 'share-section';
+    shareSection.style.cssText = 'position: fixed; top: 20px; left: 20px; background: var(--bg-secondary); padding: 20px; border-radius: 8px; border: 2px solid var(--accent); z-index: 1500; max-width: 400px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);';
     shareSection.innerHTML = `
-        <h3>Share Table Link</h3>
-        <p style="color: var(--text-secondary); margin-bottom: 10px;">Anyone with this link can join your table</p>
-        <div class="share-link">
-            <input type="text" id="share-url-input" value="${url}" readonly>
-            <button class="btn-copy" id="copy-btn">Copy</button>
+        <h3 style="margin-bottom: 10px; color: var(--accent);">Share Table Link</h3>
+        <p style="color: var(--text-secondary); margin-bottom: 10px; font-size: 0.9rem;">Anyone with this link can join your table</p>
+        <div class="share-link" style="display: flex; gap: 10px; align-items: center;">
+            <input type="text" id="share-url-input" value="${url}" readonly style="flex: 1; padding: 8px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-size: 0.9rem;">
+            <button class="btn-copy" id="copy-btn" style="padding: 8px 16px; background: var(--accent); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem;">Copy</button>
         </div>
     `;
     
-    const mainContent = document.getElementById('main-content');
-    mainContent.appendChild(shareSection);
+    document.body.appendChild(shareSection);
     
     document.getElementById('copy-btn').addEventListener('click', () => {
         const input = document.getElementById('share-url-input');
         input.select();
         document.execCommand('copy');
-        alert('Link copied to clipboard!');
+        const btn = document.getElementById('copy-btn');
+        const originalText = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.style.background = 'var(--success)';
+        setTimeout(() => {
+            btn.textContent = originalText;
+            btn.style.background = 'var(--accent)';
+        }, 2000);
     });
 }
 
