@@ -2,7 +2,7 @@ import { firebaseConfig } from './firebase-config.js';
 
 // Initialize Firebase
 import { initializeApp as firebaseInit } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getDatabase, ref, set, onValue, push, update, remove } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
+import { getDatabase, ref, set, onValue, push, update, remove, get } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js';
 
 let app, db;
 
@@ -25,20 +25,12 @@ let isHost = false;
 document.addEventListener('DOMContentLoaded', () => {
     // Attach event listeners to initial buttons immediately
     const createBtn = document.getElementById('create-table-btn');
-    const joinBtn = document.getElementById('join-table-btn');
     
     if (createBtn) {
         createBtn.addEventListener('click', (e) => {
             e.preventDefault();
             console.log('Create table button clicked');
             showCreateForm();
-        });
-    }
-    if (joinBtn) {
-        joinBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            console.log('Join table button clicked');
-            handleJoinTable();
         });
     }
     
@@ -68,17 +60,11 @@ function showWelcomeScreen() {
         <div class="welcome-screen">
             <div class="action-buttons">
                 <button id="create-table-btn" class="btn btn-primary">Create New Table</button>
-                <div class="divider">or</div>
-                <div class="join-section">
-                    <input type="text" id="table-id-input" placeholder="Enter Table ID" class="input">
-                    <button id="join-table-btn" class="btn btn-secondary">Join Table</button>
-                </div>
             </div>
         </div>
     `;
     
     document.getElementById('create-table-btn').addEventListener('click', showCreateForm);
-    document.getElementById('join-table-btn').addEventListener('click', handleJoinTable);
 }
 
 function showCreateForm() {
@@ -94,18 +80,15 @@ function showCreateForm() {
             
             <div class="form-section">
                 <div class="form-group">
-                    <label>Number of Players</label>
-                    <div class="slider-container">
-                        <input type="range" id="num-players" class="slider" min="2" max="10" value="6">
-                        <span class="slider-value" id="num-players-value">6</span>
-                    </div>
+                    <label>Your Name</label>
+                    <input type="text" id="host-name" class="input" placeholder="Enter your name" maxlength="8" required>
                 </div>
                 
                 <div class="form-group">
                     <label>Buy-in Amount</label>
                     <div class="slider-container">
                         <input type="range" id="buy-in" class="slider" min="10" max="1000" step="10" value="100">
-                        <span class="slider-value" id="buy-in-value">$100</span>
+                        <span class="slider-value" id="buy-in-value">₹100</span>
                     </div>
                 </div>
                 
@@ -113,21 +96,16 @@ function showCreateForm() {
                     <label>Small Blind</label>
                     <div class="slider-container">
                         <input type="range" id="small-blind" class="slider" min="1" max="50" step="1" value="5">
-                        <span class="slider-value" id="small-blind-value">$5</span>
+                        <span class="slider-value" id="small-blind-value">₹5</span>
                     </div>
                 </div>
                 
                 <div class="form-group">
                     <label>Big Blind (2× Small Blind)</label>
                     <div class="slider-container">
-                        <span class="slider-value" id="big-blind-value">$10</span>
+                        <span class="slider-value" id="big-blind-value">₹10</span>
                     </div>
                 </div>
-            </div>
-            
-            <div class="form-section">
-                <h2>Players</h2>
-                <div id="players-setup" class="players-setup"></div>
             </div>
             
             <button id="create-table-submit" class="btn btn-primary" style="width: 100%; margin-top: 20px;">Create Table</button>
@@ -135,29 +113,22 @@ function showCreateForm() {
     `;
     
     setupCreateFormListeners();
-    updatePlayersSetup(6);
 }
 
 function setupCreateFormListeners() {
-    const numPlayersSlider = document.getElementById('num-players');
     const buyInSlider = document.getElementById('buy-in');
     const smallBlindSlider = document.getElementById('small-blind');
     
-    numPlayersSlider.addEventListener('input', (e) => {
-        document.getElementById('num-players-value').textContent = e.target.value;
-        updatePlayersSetup(parseInt(e.target.value));
-    });
-    
     buyInSlider.addEventListener('input', (e) => {
         const value = parseInt(e.target.value);
-        document.getElementById('buy-in-value').textContent = `$${value}`;
+        document.getElementById('buy-in-value').textContent = `₹${value}`;
         updateSmallBlindMax(value);
     });
     
     smallBlindSlider.addEventListener('input', (e) => {
         const value = parseInt(e.target.value);
-        document.getElementById('small-blind-value').textContent = `$${value}`;
-        document.getElementById('big-blind-value').textContent = `$${value * 2}`;
+        document.getElementById('small-blind-value').textContent = `₹${value}`;
+        document.getElementById('big-blind-value').textContent = `₹${value * 2}`;
     });
     
     document.getElementById('create-table-submit').addEventListener('click', createTable);
@@ -341,8 +312,86 @@ function joinTable(tableId) {
     
     currentTableId = tableId;
     isHost = false;
-    showTableView();
+    showJoinForm();
     setupTableListener();
+}
+
+function showJoinForm() {
+    const mainContent = document.getElementById('main-content');
+    mainContent.innerHTML = `
+        <div class="create-form">
+            <h2>Join Table</h2>
+            <div class="form-section">
+                <div class="form-group">
+                    <label>Your Name</label>
+                    <input type="text" id="join-name" class="input" placeholder="Enter your name" maxlength="8" required>
+                </div>
+            </div>
+            <button id="join-table-submit" class="btn btn-primary" style="width: 100%;">Join Table</button>
+        </div>
+    `;
+    
+    document.getElementById('join-table-submit').addEventListener('click', async () => {
+        const playerName = document.getElementById('join-name').value.trim().substring(0, 8);
+        if (!playerName) {
+            alert('Please enter your name');
+            return;
+        }
+        
+        // Check if table exists and get current players
+        const tableRef = ref(db, `tables/${currentTableId}`);
+        const snapshot = await get(tableRef);
+        const tableData = snapshot.val();
+        
+        if (!tableData) {
+            alert('Table not found');
+            return;
+        }
+        
+        // Check for duplicate name
+        const existingNames = tableData.players.map(p => p.name.toLowerCase());
+        if (existingNames.includes(playerName.toLowerCase())) {
+            alert('This name is already taken. Please choose another name.');
+            return;
+        }
+        
+        // More distinct colors
+        const colors = ['#FF4444', '#00C853', '#2196F3', '#FF9800', '#9C27B0', '#E91E63', '#00BCD4', '#4CAF50', '#FFC107', '#F44336'];
+        const usedColors = tableData.players.map(p => p.color);
+        let playerColor = colors.find(c => !usedColors.includes(c));
+        if (!playerColor) {
+            // If all colors used, pick a random one
+            playerColor = colors[Math.floor(Math.random() * colors.length)];
+        }
+        
+        // Create new player
+        const newPlayer = {
+            id: `player_${Date.now()}`,
+            name: playerName,
+            color: playerColor,
+            chips: tableData.buyIn,
+            position: tableData.players.length,
+            totalBuyIn: tableData.buyIn,
+            buyInCount: 1,
+            active: true,
+            isDealer: false,
+            isSmallBlind: false,
+            isBigBlind: false,
+            lastBet: 0,
+            actedThisRound: false,
+            isAllIn: false,
+            isHost: false
+        };
+        
+        // Add player to table
+        const updatedPlayers = [...tableData.players, newPlayer];
+        await update(tableRef, {
+            players: updatedPlayers
+        });
+        
+        // Now show table view
+        showTableView();
+    });
 }
 
 function showTableView() {
@@ -359,7 +408,7 @@ function showTableView() {
             <div class="poker-table" id="poker-table">
                 <div class="pot-display" id="pot-display">
                     <div class="pot-label">Pot</div>
-                    <div class="pot-amount">$0</div>
+                    <div class="pot-amount">₹0</div>
                 </div>
             </div>
         </div>
@@ -416,13 +465,14 @@ function renderTable() {
             <div class="poker-table" id="poker-table">
                 <div class="pot-display" id="pot-display">
                     <div class="pot-label">Pot</div>
-                    <div class="pot-amount">$${tableState.pot || 0}</div>
+                    <div class="pot-amount">₹${tableState.pot || 0}</div>
                 </div>
             </div>
         </div>
         <div class="game-info-panel" id="game-info-panel">
             <div class="round-indicator" id="round-indicator">${roundName}</div>
             ${turnText ? `<div class="turn-indicator" id="turn-indicator">${turnText}</div>` : ''}
+            ${tableState.roundNumber ? `<div class="round-number" id="round-number">Round Number: ${tableState.roundNumber}</div>` : ''}
         </div>
         <div class="stats-panel" id="stats-panel"></div>
         <div class="control-panel" id="control-panel"></div>
@@ -481,11 +531,10 @@ function renderPlayers() {
         
         playerSeat.innerHTML = `
             <div class="player-chip" style="background: ${player.color}">
-                ${player.chips}
+                ₹${player.chips}
             </div>
             <div class="player-info">
                 <div class="player-name">${displayName}</div>
-                <div class="player-chips">$${player.chips}</div>
                 ${badges.join('')}
             </div>
         `;
@@ -503,7 +552,7 @@ function renderStats() {
         ${players.map(player => `
             <div class="stat-item">
                 <div class="stat-label">${player.name}</div>
-                <div class="stat-value">Buy-ins: ${player.buyInCount} | Total: $${player.totalBuyIn}</div>
+                <div class="stat-value">Buy-ins: ${player.buyInCount} | Total: ₹${player.totalBuyIn}</div>
             </div>
         `).join('')}
     `;
@@ -514,64 +563,89 @@ function renderControls() {
     const players = tableState.players || [];
     const currentPlayer = players[tableState.currentPlayerIndex];
     
-    // Check for players with 0 chips who need to buy in
-    const playersNeedingBuyIn = players.filter(p => p.chips === 0 && !tableState.handActive);
-    
-    if (playersNeedingBuyIn.length > 0) {
-        controlPanel.innerHTML = `
-            <div style="text-align: center;">
-                <h3 style="margin-bottom: 15px;">Players Needing Buy-In</h3>
-                <div style="display: flex; flex-direction: column; gap: 10px; max-width: 400px; margin: 0 auto;">
-                    ${playersNeedingBuyIn.map((p, i) => `
-                        <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: var(--bg-tertiary); border-radius: 6px;">
-                            <span>${p.name}</span>
-                            <button class="btn btn-primary buy-in-btn" data-player-index="${players.indexOf(p)}" style="width: auto; padding: 8px 16px;">Buy-In ($${tableState.buyIn})</button>
-                        </div>
-                    `).join('')}
+    // Check for players with 0 chips who need to buy in (only if game has started)
+    if (tableState.gameStarted) {
+        const playersNeedingBuyIn = players.filter(p => p.chips === 0 && !tableState.handActive);
+        
+        if (playersNeedingBuyIn.length > 0) {
+            controlPanel.innerHTML = `
+                <div style="text-align: center;">
+                    <h3 style="margin-bottom: 15px;">Players Needing Buy-In</h3>
+                    <div style="display: flex; flex-direction: column; gap: 10px; max-width: 400px; margin: 0 auto;">
+                        ${playersNeedingBuyIn.map((p, i) => `
+                            <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px; background: var(--bg-tertiary); border-radius: 6px;">
+                                <span>${p.name}</span>
+                                <button class="btn btn-primary buy-in-btn" data-player-index="${players.indexOf(p)}" style="width: auto; padding: 8px 16px;">Buy-In (₹${tableState.buyIn})</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ${isHost ? `
+                        <button id="start-hand-btn" class="btn btn-primary" style="margin-top: 20px;">Start New Hand</button>
+                    ` : ''}
                 </div>
-                ${tableState.dealerIndex !== -1 ? `
-                    <button id="start-hand-btn" class="btn btn-primary" style="margin-top: 20px;">Start New Hand</button>
-                ` : ''}
-            </div>
-        `;
-        
-        document.querySelectorAll('.buy-in-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const playerIndex = parseInt(e.target.dataset.playerIndex);
-                buyIn(playerIndex);
+            `;
+            
+            document.querySelectorAll('.buy-in-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const playerIndex = parseInt(e.target.dataset.playerIndex);
+                    buyIn(playerIndex);
+                });
             });
-        });
-        
-        if (tableState.dealerIndex !== -1) {
-            document.getElementById('start-hand-btn')?.addEventListener('click', startHand);
+            
+            if (isHost) {
+                document.getElementById('start-hand-btn')?.addEventListener('click', startHand);
+            }
+            return;
         }
-        return;
     }
     
-    if (!tableState.handActive) {
-        // Show start hand button or dealer selection
-        if (tableState.dealerIndex === -1) {
-            if (isHost || tableState.players.length > 0) {
-                controlPanel.innerHTML = `
-                    <div style="text-align: center;">
-                        <h3 style="margin-bottom: 15px;">Select Dealer</h3>
+    // Check if game has started
+    if (!tableState.gameStarted) {
+        // Show host controls for setup
+        if (isHost) {
+            controlPanel.innerHTML = `
+                <div style="text-align: center;">
+                    <h3 style="margin-bottom: 15px;">Game Setup</h3>
+                    <p style="color: var(--text-secondary); margin-bottom: 15px;">Players: ${players.length}</p>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 8px;">Select Dealer:</label>
                         <select id="dealer-select" class="input" style="margin-bottom: 15px;">
-                            ${players.filter(p => p.chips > 0).map((p, i) => `<option value="${players.indexOf(p)}">${p.name}</option>`).join('')}
+                            ${players.map((p, i) => `<option value="${i}" ${i === tableState.dealerIndex ? 'selected' : ''}>${p.name}</option>`).join('')}
                         </select>
-                        <button id="start-hand-btn" class="btn btn-primary">Start Hand</button>
                     </div>
-                `;
-                
-                document.getElementById('start-hand-btn').addEventListener('click', startHand);
-            }
+                    <button id="start-game-btn" class="btn btn-primary" style="width: 100%;">Start Game</button>
+                </div>
+            `;
+            
+            document.getElementById('dealer-select').addEventListener('change', async (e) => {
+                const dealerIndex = parseInt(e.target.value);
+                const tableRef = ref(db, `tables/${currentTableId}`);
+                await update(tableRef, { dealerIndex });
+            });
+            
+            document.getElementById('start-game-btn').addEventListener('click', startGame);
         } else {
+            controlPanel.innerHTML = `
+                <div style="text-align: center; color: var(--text-secondary);">
+                    Waiting for host to start the game...
+                </div>
+            `;
+        }
+    } else if (!tableState.handActive) {
+        // Game started but hand not active - show start hand button
+        if (isHost) {
             controlPanel.innerHTML = `
                 <div style="text-align: center;">
                     <button id="start-hand-btn" class="btn btn-primary">Start New Hand</button>
                 </div>
             `;
-            
             document.getElementById('start-hand-btn').addEventListener('click', startHand);
+        } else {
+            controlPanel.innerHTML = `
+                <div style="text-align: center; color: var(--text-secondary);">
+                    Waiting for host to start the hand...
+                </div>
+            `;
         }
     } else {
         // Show betting controls for current player (skip all-in players)
@@ -587,7 +661,7 @@ function renderControls() {
                 controlPanel.innerHTML = `
                     <div class="betting-actions">
                         <div class="action-buttons-row">
-                            <button id="allin-btn" class="btn btn-raise">All-In ($${currentPlayer.chips})</button>
+                            <button id="allin-btn" class="btn btn-raise">All-In (₹${currentPlayer.chips})</button>
                             <button id="fold-btn" class="btn btn-fold">Fold</button>
                         </div>
                     </div>
@@ -604,14 +678,14 @@ function renderControls() {
                     <div class="betting-actions">
                         <div class="action-buttons-row">
                             ${toCall === 0 ? `<button id="check-btn" class="btn btn-check">Check</button>` : ''}
-                            ${toCall > 0 ? `<button id="call-btn" class="btn btn-call">Call $${toCall}</button>` : ''}
+                            ${toCall > 0 ? `<button id="call-btn" class="btn btn-call">Call ₹${toCall}</button>` : ''}
                             ${maxRaise >= minRaise ? `<button id="raise-btn" class="btn btn-raise">Raise</button>` : ''}
                             <button id="fold-btn" class="btn btn-fold">Fold</button>
                         </div>
                         <div id="raise-controls" style="display: none; margin-top: 15px;">
                             <div class="bet-slider-container">
                                 <input type="range" id="raise-slider" class="slider bet-slider" min="${minRaise}" max="${maxRaise}" value="${minRaise}" step="1">
-                                <span class="bet-amount-display" id="raise-amount">$${minRaise}</span>
+                                <span class="bet-amount-display" id="raise-amount">₹${minRaise}</span>
                             </div>
                             <button id="confirm-raise-btn" class="btn btn-primary">Confirm Raise</button>
                         </div>
@@ -647,7 +721,7 @@ function setupBettingControls(player, toCall, maxRaise, minRaise) {
     
     if (raiseSlider) {
         raiseSlider.addEventListener('input', (e) => {
-            raiseAmount.textContent = `$${e.target.value}`;
+            raiseAmount.textContent = `₹${e.target.value}`;
         });
     }
     
@@ -868,6 +942,36 @@ async function buyIn(playerIndex) {
     });
 }
 
+async function startGame() {
+    const tableRef = ref(db, `tables/${currentTableId}`);
+    
+    if (tableState.players.length < 2) {
+        alert('Need at least 2 players to start the game');
+        return;
+    }
+    
+    // Get selected dealer
+    const dealerSelect = document.getElementById('dealer-select');
+    if (dealerSelect) {
+        tableState.dealerIndex = parseInt(dealerSelect.value);
+    } else {
+        tableState.dealerIndex = 0;
+    }
+    
+    // Mark game as started
+    tableState.gameStarted = true;
+    tableState.roundNumber = 1;
+    
+    await update(tableRef, {
+        gameStarted: true,
+        dealerIndex: tableState.dealerIndex,
+        roundNumber: 1
+    });
+    
+    // Start first hand
+    startHand();
+}
+
 async function startHand() {
     const tableRef = ref(db, `tables/${currentTableId}`);
     const players = [...tableState.players].filter(p => p.chips > 0);
@@ -877,22 +981,16 @@ async function startHand() {
         return;
     }
     
-    // Set dealer if not set
-    if (tableState.dealerIndex === -1) {
-        const dealerSelect = document.getElementById('dealer-select');
-        if (dealerSelect) {
-            tableState.dealerIndex = parseInt(dealerSelect.value);
-        } else {
-            // Find first player with chips
-            tableState.dealerIndex = tableState.players.findIndex(p => p.chips > 0);
-        }
-    }
-    
-    // Move dealer button clockwise to next player with chips
+    // For first hand, use selected dealer. For subsequent hands, move clockwise
     let dealerIndex = tableState.dealerIndex;
-    do {
-        dealerIndex = (dealerIndex + 1) % tableState.players.length;
-    } while (tableState.players[dealerIndex].chips === 0);
+    
+    // Only move dealer if this is not the first hand (roundNumber > 1 means we've completed at least one hand)
+    if (tableState.roundNumber && tableState.roundNumber > 1) {
+        // Move dealer button clockwise to next player with chips
+        do {
+            dealerIndex = (dealerIndex + 1) % tableState.players.length;
+        } while (tableState.players[dealerIndex].chips === 0);
+    }
     
     tableState.dealerIndex = dealerIndex;
     
@@ -985,12 +1083,12 @@ function showWinnerSelection() {
     modal.className = 'winner-modal';
     modal.innerHTML = `
         <div class="winner-modal-content">
-            <h3>Select Winner(s) - Pot: $${tableState.pot}</h3>
+            <h3>Select Winner(s) - Pot: ₹${tableState.pot}</h3>
             <div class="winner-options" id="winner-options">
                 ${eligiblePlayers.map(({ player, index }) => `
                     <div class="winner-option">
                         <input type="checkbox" id="winner-${index}" value="${index}">
-                        <label for="winner-${index}">${player.name} ($${player.chips})</label>
+                        <label for="winner-${index}">${player.name} (₹${player.chips})</label>
                         <input type="number" class="pot-split-input" id="split-${index}" placeholder="Split amount" min="0" max="${tableState.pot}" value="${Math.floor(tableState.pot / eligiblePlayers.length)}">
                     </div>
                 `).join('')}
@@ -1056,6 +1154,7 @@ async function distributePot(winners) {
     tableState.currentRound = 'pre-flop';
     tableState.bettingRound = 0;
     tableState.currentPlayerIndex = -1;
+    tableState.roundNumber = (tableState.roundNumber || 0) + 1;
     
     // Reset all players' lastBet and acted flags
     players.forEach(p => {
@@ -1074,7 +1173,8 @@ async function distributePot(winners) {
         handActive: tableState.handActive,
         currentRound: tableState.currentRound,
         bettingRound: tableState.bettingRound,
-        currentPlayerIndex: tableState.currentPlayerIndex
+        currentPlayerIndex: tableState.currentPlayerIndex,
+        roundNumber: tableState.roundNumber
     });
 }
 
