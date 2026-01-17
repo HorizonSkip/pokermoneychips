@@ -177,7 +177,8 @@ function updatePlayersSetup(numPlayers) {
     const container = document.getElementById('players-setup');
     container.innerHTML = '';
     
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B739', '#E74C3C'];
+    // More distinct colors for better visibility
+    const colors = ['#FF4444', '#00C853', '#2196F3', '#FF9800', '#9C27B0', '#E91E63', '#00BCD4', '#4CAF50', '#FFC107', '#F44336'];
     
     for (let i = 0; i < numPlayers; i++) {
         const playerCard = document.createElement('div');
@@ -187,7 +188,7 @@ function updatePlayersSetup(numPlayers) {
         playerCard.innerHTML = `
             <div class="player-header">
                 <input type="color" class="color-picker" value="${colors[i]}" data-index="${i}">
-                <input type="text" class="player-name-input" placeholder="Player ${i + 1}" value="Player ${i + 1}" data-index="${i}">
+                <input type="text" class="player-name-input" placeholder="Player ${i + 1}" value="Player ${i + 1}" data-index="${i}" maxlength="8">
             </div>
         `;
         
@@ -260,9 +261,10 @@ async function createTable() {
     playerCards.forEach((card, index) => {
         const nameInput = card.querySelector('.player-name-input');
         const colorInput = card.querySelector('.color-picker');
+        const playerName = (nameInput.value || `Player ${index + 1}`).substring(0, 8);
         players.push({
             id: `player_${Date.now()}_${index}`,
-            name: nameInput.value || `Player ${index + 1}`,
+            name: playerName,
             color: colorInput.value,
             chips: buyIn,
             position: index,
@@ -273,7 +275,8 @@ async function createTable() {
             isSmallBlind: false,
             isBigBlind: false,
             lastBet: 0,
-            actedThisRound: false
+            actedThisRound: false,
+            isAllIn: false
         });
     });
     
@@ -403,21 +406,23 @@ function renderTable() {
     
     const mainContent = document.getElementById('main-content');
     const currentPlayer = tableState.players[tableState.currentPlayerIndex];
-    const turnText = (tableState.handActive && currentPlayer && currentPlayer.active && currentPlayer.chips > 0) 
-        ? `Turn: ${currentPlayer.name}` 
+    const turnText = (tableState.handActive && currentPlayer && currentPlayer.active && (currentPlayer.chips > 0 || currentPlayer.isAllIn)) 
+        ? `Turn: ${currentPlayer.name.substring(0, 8)}` 
         : '';
     const roundName = (tableState.currentRound || 'Pre-Flop').replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase());
     
     mainContent.innerHTML = `
         <div class="table-container">
-            <div class="round-indicator" id="round-indicator">${roundName}</div>
-            ${turnText ? `<div class="turn-indicator" id="turn-indicator">${turnText}</div>` : ''}
             <div class="poker-table" id="poker-table">
                 <div class="pot-display" id="pot-display">
                     <div class="pot-label">Pot</div>
                     <div class="pot-amount">$${tableState.pot || 0}</div>
                 </div>
             </div>
+        </div>
+        <div class="game-info-panel" id="game-info-panel">
+            <div class="round-indicator" id="round-indicator">${roundName}</div>
+            ${turnText ? `<div class="turn-indicator" id="turn-indicator">${turnText}</div>` : ''}
         </div>
         <div class="stats-panel" id="stats-panel"></div>
         <div class="control-panel" id="control-panel"></div>
@@ -440,8 +445,8 @@ function renderPlayers() {
     // Calculate positions around oval table (outside the oval)
     players.forEach((player, index) => {
         const angle = (2 * Math.PI * index) / numPlayers - Math.PI / 2; // Start at top
-        const radiusX = 55; // Horizontal radius percentage (increased to place outside)
-        const radiusY = 42; // Vertical radius percentage (increased to place outside)
+        const radiusX = 62; // Horizontal radius percentage (further outside)
+        const radiusY = 48; // Vertical radius percentage (further outside)
         
         const x = 50 + radiusX * Math.cos(angle);
         const y = 50 + radiusY * Math.sin(angle);
@@ -452,11 +457,11 @@ function renderPlayers() {
         playerSeat.style.top = `${y}%`;
         playerSeat.dataset.playerIndex = index;
         
-        if (!player.active || player.chips === 0) {
+        if (!player.active || (player.chips === 0 && !player.isAllIn)) {
             playerSeat.classList.add('inactive');
         }
         
-        if (tableState.currentPlayerIndex === index && tableState.handActive && player.active && player.chips > 0) {
+        if (tableState.currentPlayerIndex === index && tableState.handActive && player.active && (player.chips > 0 || player.isAllIn)) {
             playerSeat.classList.add('active');
         }
         
@@ -464,14 +469,22 @@ function renderPlayers() {
         if (player.isDealer) badges.push('<span class="player-badge badge-dealer">D</span>');
         if (player.isSmallBlind) badges.push('<span class="player-badge badge-small-blind">SB</span>');
         if (player.isBigBlind) badges.push('<span class="player-badge badge-big-blind">BB</span>');
-        if (player.chips === 0) badges.push('<span class="player-badge" style="background: #666;">OUT</span>');
+        
+        // Show all-in if player is all-in (chips 0 but still active in hand)
+        if (player.isAllIn || (player.chips === 0 && player.active && tableState.handActive)) {
+            badges.push('<span class="player-badge" style="background: #FF9800; color: white;">ALL-IN</span>');
+        } else if (player.chips === 0 && !player.active) {
+            badges.push('<span class="player-badge" style="background: #666;">OUT</span>');
+        }
+        
+        const displayName = player.name.substring(0, 8);
         
         playerSeat.innerHTML = `
             <div class="player-chip" style="background: ${player.color}">
                 ${player.chips}
             </div>
             <div class="player-info">
-                <div class="player-name">${player.name}</div>
+                <div class="player-name">${displayName}</div>
                 <div class="player-chips">$${player.chips}</div>
                 ${badges.join('')}
             </div>
@@ -561,8 +574,8 @@ function renderControls() {
             document.getElementById('start-hand-btn').addEventListener('click', startHand);
         }
     } else {
-        // Show betting controls for current player
-        if (currentPlayer && currentPlayer.active && currentPlayer.chips > 0) {
+        // Show betting controls for current player (skip all-in players)
+        if (currentPlayer && currentPlayer.active && currentPlayer.chips > 0 && !currentPlayer.isAllIn) {
             // Calculate highest bet in current round
             const highestBet = Math.max(...players.filter(p => p.active).map(p => p.lastBet || 0));
             const toCall = Math.max(0, highestBet - (currentPlayer.lastBet || 0));
@@ -695,9 +708,9 @@ async function performAction(action, amount) {
         currentPlayer.lastBet = (currentPlayer.lastBet || 0) + betAmount;
         tableState.pot = (tableState.pot || 0) + betAmount;
         
-        // If player went all-in, mark them as inactive for this hand
-        if (currentPlayer.chips === 0) {
-            // They're all-in, but still in the hand
+        // If player went all-in, mark them as all-in (still active in hand)
+        if (currentPlayer.chips === 0 && tableState.handActive) {
+            currentPlayer.isAllIn = true;
         }
     }
     
@@ -713,8 +726,8 @@ async function performAction(action, amount) {
         currentPlayer.actedThisRound = true;
     }
     
-    // Move to next active player with chips
-    const activePlayers = players.filter(p => p.active && p.chips > 0);
+    // Move to next active player with chips or all-in players
+    const activePlayers = players.filter(p => p.active && (p.chips > 0 || p.isAllIn));
     
     // Check if only one player remains (all others folded)
     if (activePlayers.length === 1 && tableState.pot > 0) {
@@ -806,10 +819,19 @@ function advanceRound() {
             p.actedThisRound = false;
         });
         
-        // Find first active player to act
-        const activePlayers = tableState.players.filter(p => p.active && p.chips > 0);
+        // Find first active player to act (excluding all-in players)
+        const activePlayers = tableState.players.filter(p => p.active && p.chips > 0 && !p.isAllIn);
         if (activePlayers.length > 0) {
             tableState.currentPlayerIndex = tableState.players.findIndex(p => p.id === activePlayers[0].id);
+        } else {
+            // If all players are all-in, hand is complete
+            tableState.handActive = false;
+            tableState.currentPlayerIndex = -1;
+            setTimeout(() => {
+                if (tableState.pot > 0) {
+                    showWinnerSelection();
+                }
+            }, 500);
         }
     } else {
         // Hand complete - show winner selection
@@ -1043,6 +1065,7 @@ async function distributePot(winners) {
         p.isDealer = false;
         p.isSmallBlind = false;
         p.isBigBlind = false;
+        p.isAllIn = false; // Reset all-in status
     });
     
     await update(tableRef, {
