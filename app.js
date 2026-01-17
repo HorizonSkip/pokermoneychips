@@ -340,6 +340,33 @@ function joinTable(tableId) {
     setupTableListener();
 }
 
+function showTableView() {
+    const mainContent = document.getElementById('main-content');
+    if (!mainContent) {
+        console.error('Main content element not found');
+        return;
+    }
+    
+    // Set up the table view structure
+    mainContent.innerHTML = `
+        <div class="table-container">
+            <div class="round-indicator" id="round-indicator">Loading...</div>
+            <div class="poker-table" id="poker-table">
+                <div class="pot-display" id="pot-display">
+                    <div class="pot-label">Pot</div>
+                    <div class="pot-amount">$0</div>
+                </div>
+            </div>
+        </div>
+        <div class="stats-panel" id="stats-panel"></div>
+        <div class="control-panel" id="control-panel">
+            <div style="text-align: center; color: var(--text-secondary);">
+                Loading table...
+            </div>
+        </div>
+    `;
+}
+
 function setupTableListener() {
     if (!db) {
         console.error('Cannot setup table listener: Firebase not initialized');
